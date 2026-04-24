@@ -1,0 +1,22 @@
+{
+  "name": "fincorp-artifact-service",
+  "version": "1.0.0",
+  "description": "FinCorp secure artifact management service",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "jest --coverage",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "jest": "^29.5.0",
+    "supertest": "^6.3.3",
+    "eslint": "^8.43.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

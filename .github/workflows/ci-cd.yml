@@ -1,0 +1,283 @@
+name: "FinCorp Secure CI/CD Pipeline"
+
+on:
+  push:
+    branches: [main, release/**]
+  pull_request:
+    branches: [main]
+
+permissions:
+  id-token: write   # Required for OIDC keyless auth with AWS
+  contents: read
+  security-events: write
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: fincorp/artifact-service
+  CODEARTIFACT_DOMAIN: fincorp
+  CODEARTIFACT_DOMAIN_OWNER: ${{ secrets.AWS_ACCOUNT_ID }}
+  CODEARTIFACT_REPO: fincorp-npm
+
+jobs:
+  # 1. Lint & Unit Tests
+  test:
+    name: "Lint & Unit Tests"
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CICD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get CodeArtifact token
+        id: ca-token
+        run: |
+          TOKEN=$(aws codeartifact get-authorization-token \
+            --domain ${{ env.CODEARTIFACT_DOMAIN }} \
+            --domain-owner ${{ env.CODEARTIFACT_DOMAIN_OWNER }} \
+            --query authorizationToken --output text)
+          echo "::add-mask::$TOKEN"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+          ENDPOINT=$(aws codeartifact get-repository-endpoint \
+            --domain ${{ env.CODEARTIFACT_DOMAIN }} \
+            --domain-owner ${{ env.CODEARTIFACT_DOMAIN_OWNER }} \
+            --repository ${{ env.CODEARTIFACT_REPO }} \
+            --format npm \
+            --query repositoryEndpoint --output text)
+          echo "npm_endpoint=$ENDPOINT" >> "$GITHUB_OUTPUT"
+
+      - name: Configure npm to use CodeArtifact
+        run: |
+          ENDPOINT="${{ steps.ca-token.outputs.npm_endpoint }}"
+          TOKEN="${{ steps.ca-token.outputs.token }}"
+          HOST=$(echo "$ENDPOINT" | sed 's|https://||' | sed 's|/.*||')
+          npm config set registry "$ENDPOINT"
+          npm config set "//${HOST}/:_authToken" "$TOKEN"
+          npm config set "//${HOST}/:always-auth" true
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint || true
+
+      - name: Run tests with coverage
+        run: npm test -- --coverageReporters=json-summary --forceExit
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: app/coverage/
+
+  # 2. Build & Scan Docker Image
+  build-and-scan:
+    name: "Build, Scan & Push Image"
+    runs-on: ubuntu-22.04
+    needs: test
+    outputs:
+      image_uri: ${{ steps.push.outputs.image_uri }}
+      image_digest: ${{ steps.push.outputs.image_digest }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CICD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get CodeArtifact npm endpoint (for Dockerfile build-arg)
+        id: ca-endpoint
+        run: |
+          TOKEN=$(aws codeartifact get-authorization-token \
+            --domain ${{ env.CODEARTIFACT_DOMAIN }} \
+            --domain-owner ${{ env.CODEARTIFACT_DOMAIN_OWNER }} \
+            --query authorizationToken --output text)
+          echo "::add-mask::$TOKEN"
+
+          ENDPOINT=$(aws codeartifact get-repository-endpoint \
+            --domain ${{ env.CODEARTIFACT_DOMAIN }} \
+            --domain-owner ${{ env.CODEARTIFACT_DOMAIN_OWNER }} \
+            --repository ${{ env.CODEARTIFACT_REPO }} \
+            --format npm \
+            --query repositoryEndpoint --output text)
+
+          HOST=$(echo "$ENDPOINT" | sed 's|https://||' | sed 's|/.*||')
+          # Build an authenticated URL for the Dockerfile NPM_REGISTRY arg
+          AUTH_ENDPOINT="https://aws:${TOKEN}@${HOST}/npm/${{ env.CODEARTIFACT_REPO }}/"
+          echo "::add-mask::$AUTH_ENDPOINT"
+          echo "npm_registry=$AUTH_ENDPOINT" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image metadata
+        id: meta
+        run: |
+          SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-8)
+          echo "tag=v${{ github.run_number }}-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+          echo "image=${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg NPM_REGISTRY="${{ steps.ca-endpoint.outputs.npm_registry }}" \
+            --build-arg APP_VERSION="${{ steps.meta.outputs.tag }}" \
+            --tag "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}" \
+            --tag "${{ steps.meta.outputs.image }}:build-${{ github.run_number }}" \
+            --file app/Dockerfile \
+            app/
+
+      # Trivy vulnerability scan (local image, before push)
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}"
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"          # FAIL the build on CRITICAL or HIGH findings
+          ignore-unfixed: false
+
+      - name: Upload Trivy SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+      # Push to ECR (only after scan passes)
+      - name: Push image to ECR
+        id: push
+        run: |
+          docker push "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' \
+            "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}" | cut -d@ -f2)
+          echo "image_uri=${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}" >> "$GITHUB_OUTPUT"
+          echo "image_digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "Pushed: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}@${DIGEST}"
+
+      # ECR image scan results (Enhanced scanning via ECR)
+      - name: Wait for ECR image scan to complete
+        run: |
+          aws ecr wait image-scan-complete \
+            --repository-name "${{ env.ECR_REPOSITORY }}" \
+            --image-id imageTag="${{ steps.meta.outputs.tag }}" || true
+
+      - name: Check ECR scan results for HIGH/CRITICAL
+        id: ecr-scan
+        run: |
+          bash scripts/check-ecr-vulnerabilities.sh \
+            "${{ env.ECR_REPOSITORY }}" \
+            "${{ steps.meta.outputs.tag }}"
+
+      - name: Save image metadata as artifact
+        run: |
+          cat <<EOF > image-metadata.json
+          {
+            "image_uri": "${{ steps.push.outputs.image_uri }}",
+            "image_digest": "${{ steps.push.outputs.image_digest }}",
+            "git_sha": "${{ github.sha }}",
+            "run_number": "${{ github.run_number }}",
+            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+
+      - name: Upload image metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-metadata
+          path: image-metadata.json
+
+  # 3. Provenance / SBOM
+  sbom:
+    name: "Generate SBOM"
+    runs-on: ubuntu-22.04
+    needs: build-and-scan
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CICD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Generate SBOM with Syft
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ needs.build-and-scan.outputs.image_uri }}
+          artifact-name: sbom-${{ github.run_number }}.spdx.json
+          format: spdx-json
+
+  # 4. Infrastructure validation (Terraform plan)
+  terraform-plan:
+    name: "Terraform Plan"
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CICD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.x"
+
+      - name: Terraform Init
+        working-directory: infrastructure/terraform
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: infrastructure/terraform
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: infrastructure/terraform
+        run: |
+          terraform plan \
+            -var="db_username=${{ secrets.DB_USERNAME }}" \
+            -var="db_password=${{ secrets.DB_PASSWORD }}" \
+            -var="primary_vpc_id=${{ secrets.PRIMARY_VPC_ID }}" \
+            -var="primary_subnet_ids=${{ secrets.PRIMARY_SUBNET_IDS }}" \
+            -out=tfplan \
+            -no-color 2>&1 | tee plan-output.txt
+
+      - name: Upload Terraform plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: |
+            infrastructure/terraform/tfplan
+            infrastructure/terraform/plan-output.txt

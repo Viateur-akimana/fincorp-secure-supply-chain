@@ -1,0 +1,109 @@
+name: "DR Simulation & Recovery Test"
+
+on:
+  # Manual trigger with environment selection
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action to perform"
+        required: true
+        type: choice
+        options:
+          - simulate-failure
+          - restore-from-backup
+          - validate-restore
+      confirm:
+        description: "Type CONFIRM to proceed with destructive actions"
+        required: true
+        type: string
+
+  # Scheduled DR drill – every Sunday 01:00 UTC (non-destructive validate only)
+  schedule:
+    - cron: "0 1 * * 0"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  PRIMARY_REGION: us-east-1
+  DR_REGION: eu-west-1
+  DR_INSTANCE_IDENTIFIER: fincorp-dr-restored
+  BACKUP_VAULT_NAME: fincorp-primary-vault
+  DR_VAULT_NAME: fincorp-dr-vault
+
+jobs:
+  dr-action:
+    name: "DR ${{ github.event.inputs.action || 'validate' }}"
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CICD_ROLE_ARN }}
+          aws-region: ${{ env.PRIMARY_REGION }}
+
+      - name: Validate confirmation for destructive actions
+        if: >
+          github.event.inputs.action == 'simulate-failure' &&
+          github.event.inputs.confirm != 'CONFIRM'
+        run: |
+          echo "ERROR: You must type CONFIRM to run simulate-failure"
+          exit 1
+
+      # Simulate Region Failure
+      - name: Simulate region failure (delete primary DB)
+        if: github.event.inputs.action == 'simulate-failure'
+        run: |
+          bash scripts/dr-simulate-failure.sh \
+            "${{ secrets.PRIMARY_DB_IDENTIFIER }}" \
+            "${{ env.PRIMARY_REGION }}"
+
+      # Restore from DR backup
+      - name: Restore database in DR region
+        if: >
+          github.event.inputs.action == 'restore-from-backup' ||
+          github.event_name == 'schedule'
+        run: |
+          bash scripts/dr-restore.sh \
+            "${{ env.DR_VAULT_NAME }}" \
+            "${{ env.DR_REGION }}" \
+            "${{ env.DR_INSTANCE_IDENTIFIER }}" \
+            "${{ secrets.DR_VPC_ID }}" \
+            "${{ secrets.DR_SUBNET_GROUP }}" \
+            "${{ secrets.DR_SECURITY_GROUP }}" \
+            "${{ secrets.DR_KMS_KEY_ARN }}"
+
+      # Validate restored DB
+      - name: Validate DR restore
+        if: >
+          github.event.inputs.action == 'validate-restore' ||
+          github.event_name == 'schedule'
+        run: |
+          bash scripts/dr-validate.sh \
+            "${{ env.DR_REGION }}" \
+            "${{ env.DR_INSTANCE_IDENTIFIER }}"
+
+      - name: Record DR test result
+        if: always()
+        run: |
+          cat <<EOF > dr-test-result.json
+          {
+            "action": "${{ github.event.inputs.action || 'scheduled-validate' }}",
+            "run_id": "${{ github.run_id }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "actor": "${{ github.actor }}",
+            "outcome": "${{ job.status }}"
+          }
+          EOF
+
+      - name: Upload DR test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dr-test-report-${{ github.run_number }}
+          path: dr-test-result.json

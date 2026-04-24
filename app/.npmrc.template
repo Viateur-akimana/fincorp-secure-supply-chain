@@ -1,0 +1,7 @@
+# This file is a template. The actual .npmrc is generated at pipeline runtime
+# from the CodeArtifact login token. Do NOT commit the real .npmrc.
+# See scripts/setup-codeartifact.sh for generation logic.
+#
+# registry=https://<DOMAIN>-<ACCOUNT>.d.codeartifact.<REGION>.amazonaws.com/npm/<REPO>/
+# //<DOMAIN>-<ACCOUNT>.d.codeartifact.<REGION>.amazonaws.com/npm/<REPO>/:_authToken=<TOKEN>
+# //<DOMAIN>-<ACCOUNT>.d.codeartifact.<REGION>.amazonaws.com/npm/<REPO>/:always-auth=true

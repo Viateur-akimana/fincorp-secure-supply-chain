@@ -1,0 +1,37 @@
+# Terraform
+*.tfvars
+!*.tfvars.example
+.terraform/
+.terraform.lock.hcl
+tfplan
+*.tfstate
+*.tfstate.backup
+override.tf
+override.tf.json
+
+# Credentials and secrets
+.env
+.env.*
+*.pem
+*.key
+*.npmrc
+!.npmrc.template
+~/.config/pip/pip.conf
+
+# Node
+node_modules/
+npm-debug.log*
+coverage/
+
+# Build artifacts
+*.tar.gz
+*.zip
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
