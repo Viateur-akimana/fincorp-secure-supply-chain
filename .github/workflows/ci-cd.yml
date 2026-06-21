@@ -85,7 +85,6 @@ jobs:
           HOST=$(echo "$ENDPOINT" | sed 's|https://||' | sed 's|/.*||')
           npm config set registry "$ENDPOINT"
           npm config set "//${HOST}/:_authToken" "$TOKEN"
-          npm config set "//${HOST}/:always-auth" true
 
       - name: Install dependencies
         run: npm ci
