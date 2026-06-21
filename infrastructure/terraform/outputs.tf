@@ -38,3 +38,13 @@ output "cicd_role_arn" {
   description = "IAM role ARN for GitHub Actions OIDC"
   value       = module.iam.cicd_role_arn
 }
+
+output "primary_vpc_id" {
+  description = "Primary VPC ID (also in SSM /fincorp/primary/vpc_id)"
+  value       = module.networking_primary.vpc_id
+}
+
+output "dr_vpc_id" {
+  description = "DR VPC ID (also in SSM /fincorp/dr/vpc_id)"
+  value       = module.networking_dr.vpc_id
+}

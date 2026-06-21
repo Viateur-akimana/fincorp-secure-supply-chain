@@ -1,5 +1,8 @@
 # Copy this file to terraform.tfvars and fill in your values.
 # DO NOT commit terraform.tfvars – it is in .gitignore.
+#
+# VPC, subnets, security groups, and KMS keys are provisioned automatically
+# by the networking module — no manual networking values needed here.
 
 primary_region      = "us-east-1"
 dr_region           = "us-west-2"
@@ -10,10 +13,5 @@ db_name             = "fincorp_db"
 db_instance_class   = "db.t3.medium"
 
 # Sensitive – provide via environment variables or CI secrets:
-# db_username         = "fincorp_admin"
-# db_password         = "REPLACE_WITH_STRONG_PASSWORD"
-
-# VPC / networking – obtain from your AWS account:
-# primary_vpc_id      = "vpc-XXXXXXXXXXXXXXXXX"
-# primary_subnet_ids  = ["subnet-XXXXXXXXX", "subnet-YYYYYYYYY"]
-# allowed_cidr_blocks = ["10.0.0.0/8"]
+db_username = "fincorp_admin"
+db_password = "REPLACE_WITH_STRONG_PASSWORD"

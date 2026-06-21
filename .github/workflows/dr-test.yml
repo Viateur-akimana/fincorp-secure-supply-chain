@@ -1,7 +1,6 @@
 name: "DR Simulation & Recovery Test"
 
 on:
-  # Manual trigger with environment selection
   workflow_dispatch:
     inputs:
       action:
@@ -41,10 +40,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (OIDC)
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_CICD_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.PRIMARY_REGION }}
 
       - name: Validate confirmation for destructive actions
@@ -55,15 +55,25 @@ jobs:
           echo "ERROR: You must type CONFIRM to run simulate-failure"
           exit 1
 
+      # Read primary DB identifier from SSM
+      - name: Read primary DB identifier from SSM
+        id: ssm-primary
+        if: github.event.inputs.action == 'simulate-failure'
+        run: |
+          DB_ID=$(aws ssm get-parameter \
+            --name "/fincorp/primary/db_identifier" \
+            --query Parameter.Value --output text)
+          echo "db_identifier=$DB_ID" >> "$GITHUB_OUTPUT"
+
       # Simulate Region Failure
       - name: Simulate region failure (delete primary DB)
         if: github.event.inputs.action == 'simulate-failure'
         run: |
           bash scripts/dr-simulate-failure.sh \
-            "${{ secrets.PRIMARY_DB_IDENTIFIER }}" \
+            "${{ steps.ssm-primary.outputs.db_identifier }}" \
             "${{ env.PRIMARY_REGION }}"
 
-      # Restore from DR backup
+      # Restore from DR backup — networking values read from SSM inside the script
       - name: Restore database in DR region
         if: >
           github.event.inputs.action == 'restore-from-backup' ||
@@ -72,11 +82,7 @@ jobs:
           bash scripts/dr-restore.sh \
             "${{ env.DR_VAULT_NAME }}" \
             "${{ env.DR_REGION }}" \
-            "${{ env.DR_INSTANCE_IDENTIFIER }}" \
-            "${{ secrets.DR_VPC_ID }}" \
-            "${{ secrets.DR_SUBNET_GROUP }}" \
-            "${{ secrets.DR_SECURITY_GROUP }}" \
-            "${{ secrets.DR_KMS_KEY_ARN }}"
+            "${{ env.DR_INSTANCE_IDENTIFIER }}"
 
       # Validate restored DB
       - name: Validate DR restore

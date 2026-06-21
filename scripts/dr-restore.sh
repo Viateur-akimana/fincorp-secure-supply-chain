@@ -1,20 +1,17 @@
 #!/usr/bin/env bash
 # dr-restore.sh
 # Restores the RDS database in us-west-2 from the latest AWS Backup recovery point.
+# Networking values (VPC, subnet group, SG, KMS key) are read from SSM Parameter Store
+# — no manual secrets required.
 # Target RTO: 30 minutes.
 #
 # Usage:
-#   dr-restore.sh <dr-vault-name> <dr-region> <new-db-id> \
-#                 <vpc-id> <subnet-group> <security-group-id> <kms-key-arn>
+#   dr-restore.sh <dr-vault-name> <dr-region> <new-db-id>
 set -euo pipefail
 
-VAULT_NAME="$1"
+VAULT_NAME="${1:-fincorp-dr-vault}"
 DR_REGION="${2:-us-west-2}"
-NEW_DB_ID="$3"
-VPC_ID="$4"
-SUBNET_GROUP="$5"
-SECURITY_GROUP="$6"
-KMS_KEY_ARN="$7"
+NEW_DB_ID="${3:-fincorp-dr-restored}"
 
 START_TIME=$(date +%s)
 echo "============================================================"
@@ -24,8 +21,26 @@ echo "  Vault      : ${VAULT_NAME}"
 echo "  Started at : $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "============================================================"
 
-# 1. Find the latest recovery point
-echo "[1/5] Locating latest recovery point in DR vault ..."
+# 1. Read networking config from SSM (provisioned automatically by Terraform)
+echo "[1/6] Reading DR networking config from SSM Parameter Store ..."
+SUBNET_GROUP=$(aws ssm get-parameter \
+  --name "/fincorp/dr/db_subnet_group" \
+  --query Parameter.Value --output text)
+
+SECURITY_GROUP=$(aws ssm get-parameter \
+  --name "/fincorp/dr/security_group_id" \
+  --query Parameter.Value --output text)
+
+KMS_KEY_ARN=$(aws ssm get-parameter \
+  --name "/fincorp/dr/kms_key_arn" \
+  --query Parameter.Value --output text)
+
+echo "  Subnet group   : ${SUBNET_GROUP}"
+echo "  Security group : ${SECURITY_GROUP}"
+echo "  KMS key        : ${KMS_KEY_ARN}"
+
+# 2. Find the latest recovery point
+echo "[2/6] Locating latest recovery point in DR vault ..."
 RECOVERY_POINT_ARN=$(aws backup list-recovery-points-by-backup-vault \
   --backup-vault-name "$VAULT_NAME" \
   --region "$DR_REGION" \
@@ -48,8 +63,8 @@ CREATION_DATE=$(aws backup describe-recovery-point \
 echo "  Recovery point ARN : ${RECOVERY_POINT_ARN}"
 echo "  Creation date      : ${CREATION_DATE}"
 
-# 2. Start restore job
-echo "[2/5] Starting restore job ..."
+# 3. Start restore job
+echo "[3/6] Starting restore job ..."
 RESTORE_JOB_ID=$(aws backup start-restore-job \
   --recovery-point-arn "$RECOVERY_POINT_ARN" \
   --region "$DR_REGION" \
@@ -67,9 +82,9 @@ RESTORE_JOB_ID=$(aws backup start-restore-job \
 
 echo "  Restore job ID: ${RESTORE_JOB_ID}"
 
-# 3. Poll restore job status
-echo "[3/5] Waiting for restore job to complete (target: 30 min) ..."
-MAX_WAIT=1800  # 30 minutes
+# 4. Poll restore job status
+echo "[4/6] Waiting for restore job to complete (target: 30 min) ..."
+MAX_WAIT=1800
 INTERVAL=30
 elapsed=0
 
@@ -105,8 +120,8 @@ while true; do
   elapsed=$((elapsed + INTERVAL))
 done
 
-# 4. Verify the restored instance
-echo "[4/5] Verifying restored DB instance ..."
+# 5. Verify the restored instance
+echo "[5/6] Verifying restored DB instance ..."
 aws rds wait db-instance-available \
   --db-instance-identifier "$NEW_DB_ID" \
   --region "$DR_REGION"
@@ -119,7 +134,7 @@ ENDPOINT=$(aws rds describe-db-instances \
 
 echo "  DB endpoint: ${ENDPOINT}"
 
-# 5. Report RTO
+# 6. Report RTO
 END_TIME=$(date +%s)
 TOTAL_SECONDS=$((END_TIME - START_TIME))
 TOTAL_MINUTES=$(( TOTAL_SECONDS / 60 ))

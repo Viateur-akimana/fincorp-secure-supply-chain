@@ -272,8 +272,6 @@ jobs:
           terraform plan \
             -var="db_username=${{ secrets.DB_USERNAME }}" \
             -var="db_password=${{ secrets.DB_PASSWORD }}" \
-            -var="primary_vpc_id=${{ secrets.PRIMARY_VPC_ID }}" \
-            -var="primary_subnet_ids=${{ secrets.PRIMARY_SUBNET_IDS }}" \
             -out=tfplan \
             -no-color 2>&1 | tee plan-output.txt
 

@@ -24,7 +24,6 @@ provider "aws" {
   }
 }
 
-# Secondary provider for DR region
 provider "aws" {
   alias  = "dr"
   region = var.dr_region
@@ -40,6 +39,22 @@ provider "aws" {
 
 # Modules
 
+module "networking_primary" {
+  source      = "./modules/networking"
+  name_prefix = "fincorp-primary"
+  vpc_cidr    = "10.0.0.0/16"
+  region      = var.primary_region
+}
+
+module "networking_dr" {
+  source      = "./modules/networking"
+  name_prefix = "fincorp-dr"
+  vpc_cidr    = "10.1.0.0/16"
+  region      = var.dr_region
+
+  providers = { aws = aws.dr }
+}
+
 module "codeartifact" {
   source      = "./modules/codeartifact"
   domain_name = var.codeartifact_domain
@@ -54,41 +69,86 @@ module "ecr" {
 }
 
 module "iam" {
-  source          = "./modules/iam"
-  account_id      = data.aws_caller_identity.current.account_id
-  primary_region  = var.primary_region
-  ecr_repo_arn    = module.ecr.repository_arn
-  ca_domain_arn   = module.codeartifact.domain_arn
+  source         = "./modules/iam"
+  account_id     = data.aws_caller_identity.current.account_id
+  primary_region = var.primary_region
+  ecr_repo_arn   = module.ecr.repository_arn
+  ca_domain_arn  = module.codeartifact.domain_arn
 }
 
 module "rds_primary" {
-  source              = "./modules/rds"
-  identifier          = "fincorp-primary"
-  region              = var.primary_region
-  db_name             = var.db_name
-  db_username         = var.db_username
-  db_password         = var.db_password
-  vpc_id              = var.primary_vpc_id
-  subnet_ids          = var.primary_subnet_ids
-  allowed_cidr_blocks = var.allowed_cidr_blocks
-  multi_az            = false
-  backup_retention    = 7
-  instance_class      = var.db_instance_class
+  source               = "./modules/rds"
+  identifier           = "fincorp-primary"
+  region               = var.primary_region
+  db_name              = var.db_name
+  db_username          = var.db_username
+  db_password          = var.db_password
+  db_subnet_group_name = module.networking_primary.db_subnet_group_name
+  security_group_id    = module.networking_primary.rds_security_group_id
+  kms_key_arn          = module.networking_primary.rds_kms_key_arn
+  multi_az             = true
+  backup_retention     = 7
+  instance_class       = var.db_instance_class
 }
 
 module "backup" {
-  source             = "./modules/backup"
-  primary_region     = var.primary_region
-  dr_region          = var.dr_region
-  rds_arn            = module.rds_primary.db_instance_arn
-  backup_vault_name  = "fincorp-primary-vault"
-  dr_vault_name      = "fincorp-dr-vault"
-  account_id         = data.aws_caller_identity.current.account_id
+  source            = "./modules/backup"
+  primary_region    = var.primary_region
+  dr_region         = var.dr_region
+  rds_arn           = module.rds_primary.db_instance_arn
+  backup_vault_name = "fincorp-primary-vault"
+  dr_vault_name     = "fincorp-dr-vault"
+  account_id        = data.aws_caller_identity.current.account_id
 
   providers = {
     aws    = aws
     aws.dr = aws.dr
   }
+}
+
+# SSM Parameter Store — all pipeline and DR networking values auto-populated
+# Primary region values
+resource "aws_ssm_parameter" "primary_vpc_id" {
+  name  = "/fincorp/primary/vpc_id"
+  type  = "String"
+  value = module.networking_primary.vpc_id
+}
+
+resource "aws_ssm_parameter" "primary_subnet_ids" {
+  name  = "/fincorp/primary/subnet_ids"
+  type  = "String"
+  value = jsonencode(module.networking_primary.subnet_ids)
+}
+
+resource "aws_ssm_parameter" "primary_db_identifier" {
+  name  = "/fincorp/primary/db_identifier"
+  type  = "String"
+  value = "fincorp-primary"
+}
+
+# DR region values — written to primary region SSM (read by GitHub Actions runner)
+resource "aws_ssm_parameter" "dr_vpc_id" {
+  name  = "/fincorp/dr/vpc_id"
+  type  = "String"
+  value = module.networking_dr.vpc_id
+}
+
+resource "aws_ssm_parameter" "dr_subnet_group" {
+  name  = "/fincorp/dr/db_subnet_group"
+  type  = "String"
+  value = module.networking_dr.db_subnet_group_name
+}
+
+resource "aws_ssm_parameter" "dr_security_group_id" {
+  name  = "/fincorp/dr/security_group_id"
+  type  = "String"
+  value = module.networking_dr.rds_security_group_id
+}
+
+resource "aws_ssm_parameter" "dr_kms_key_arn" {
+  name  = "/fincorp/dr/kms_key_arn"
+  type  = "String"
+  value = module.networking_dr.rds_kms_key_arn
 }
 
 # Data sources

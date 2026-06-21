@@ -51,19 +51,3 @@ variable "db_instance_class" {
   type        = string
   default     = "db.t3.medium"
 }
-
-variable "primary_vpc_id" {
-  description = "VPC ID in primary region"
-  type        = string
-}
-
-variable "primary_subnet_ids" {
-  description = "Private subnet IDs for RDS in primary region"
-  type        = list(string)
-}
-
-variable "allowed_cidr_blocks" {
-  description = "CIDR blocks allowed to connect to RDS"
-  type        = list(string)
-  default     = []
-}

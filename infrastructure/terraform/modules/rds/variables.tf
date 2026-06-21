@@ -20,17 +20,19 @@ variable "db_password" {
   sensitive = true
 }
 
-variable "vpc_id" {
-  type = string
+variable "db_subnet_group_name" {
+  description = "DB subnet group name (provisioned by the networking module)"
+  type        = string
 }
 
-variable "subnet_ids" {
-  type = list(string)
+variable "security_group_id" {
+  description = "RDS security group ID (provisioned by the networking module)"
+  type        = string
 }
 
-variable "allowed_cidr_blocks" {
-  type    = list(string)
-  default = []
+variable "kms_key_arn" {
+  description = "KMS key ARN for RDS encryption (provisioned by the networking module)"
+  type        = string
 }
 
 variable "multi_az" {
