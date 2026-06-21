@@ -8,7 +8,7 @@ resource "aws_db_instance" "this" {
 
   db_name  = var.db_name
   username = var.db_username
-  password = var.db_password
+  manage_master_user_password = true  # AWS generates + rotates password in Secrets Manager
 
   allocated_storage     = 100
   max_allocated_storage = 500

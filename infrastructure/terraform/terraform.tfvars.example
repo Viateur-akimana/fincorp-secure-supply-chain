@@ -14,4 +14,4 @@ db_instance_class   = "db.t3.medium"
 
 # Sensitive – provide via environment variables or CI secrets:
 db_username = "fincorp_admin"
-db_password = "REPLACE_WITH_STRONG_PASSWORD"
+# db_password is NOT needed — AWS Secrets Manager generates and rotates it automatically

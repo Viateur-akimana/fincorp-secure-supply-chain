@@ -15,11 +15,6 @@ variable "db_username" {
   sensitive = true
 }
 
-variable "db_password" {
-  type      = string
-  sensitive = true
-}
-
 variable "db_subnet_group_name" {
   description = "DB subnet group name (provisioned by the networking module)"
   type        = string

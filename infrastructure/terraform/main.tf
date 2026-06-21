@@ -8,9 +8,20 @@ terraform {
     }
   }
 
+  # Local backend – for production migrate to S3:
+  # 1. Run: bash scripts/bootstrap-tf-state.sh
+  # 2. Replace with the s3 backend block below and run: terraform init -migrate-state
   backend "local" {
     path = "terraform.tfstate"
   }
+
+  # backend "s3" {
+  #   bucket         = "fincorp-terraform-state-<ACCOUNT_ID>"
+  #   key            = "artifact-mgmt/terraform.tfstate"
+  #   region         = "us-east-1"
+  #   encrypt        = true
+  #   dynamodb_table = "fincorp-terraform-locks"
+  # }
 }
 
 provider "aws" {
@@ -82,7 +93,6 @@ module "rds_primary" {
   region               = var.primary_region
   db_name              = var.db_name
   db_username          = var.db_username
-  db_password          = var.db_password
   db_subnet_group_name = module.networking_primary.db_subnet_group_name
   security_group_id    = module.networking_primary.rds_security_group_id
   kms_key_arn          = module.networking_primary.rds_kms_key_arn
@@ -149,6 +159,19 @@ resource "aws_ssm_parameter" "dr_kms_key_arn" {
   name  = "/fincorp/dr/kms_key_arn"
   type  = "String"
   value = module.networking_dr.rds_kms_key_arn
+}
+
+module "cloudtrail" {
+  source     = "./modules/cloudtrail"
+  account_id = data.aws_caller_identity.current.account_id
+  region     = var.primary_region
+}
+
+# SSM: store master password secret ARN so apps can fetch credentials without knowing the password
+resource "aws_ssm_parameter" "db_secret_arn" {
+  name  = "/fincorp/primary/db_secret_arn"
+  type  = "String"
+  value = module.rds_primary.master_user_secret_arn
 }
 
 # Data sources

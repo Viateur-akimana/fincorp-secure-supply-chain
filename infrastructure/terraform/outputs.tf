@@ -39,6 +39,16 @@ output "cicd_role_arn" {
   value       = module.iam.cicd_role_arn
 }
 
+output "cloudtrail_log_bucket" {
+  description = "S3 bucket storing CloudTrail audit logs"
+  value       = module.cloudtrail.log_bucket_name
+}
+
+output "db_secret_arn" {
+  description = "Secrets Manager ARN for the RDS master password"
+  value       = module.rds_primary.master_user_secret_arn
+}
+
 output "primary_vpc_id" {
   description = "Primary VPC ID (also in SSM /fincorp/primary/vpc_id)"
   value       = module.networking_primary.vpc_id
