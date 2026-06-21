@@ -2,18 +2,30 @@
 
 ## Overview
 
-The pipeline is defined in [.github/workflows/ci-cd.yml](../.github/workflows/ci-cd.yml) and consists of four jobs:
+The pipeline is defined in [.github/workflows/ci-cd.yml](../.github/workflows/ci-cd.yml) and consists of five jobs:
 
 ```
-push to main
+push to main / pull request
+ secret-scan (Gitleaks – gates ALL downstream jobs)
+ |
  test build-and-scan sbom
  (lint + (Docker build, (SPDX JSON
  jest) Trivy, ECR push, via Syft)
- ECR scan gate)
+ ECR scan gate,
+ Cosign sign)
                      on pull_request only
  terraform-plan
  (validate + plan)
 ```
+
+---
+
+## Job: `secret-scan`
+
+Runs **before every other job** on both `push` and `pull_request` events. Uses Gitleaks to scan
+the full git history for committed secrets (API keys, passwords, tokens). All downstream jobs
+declare `needs: secret-scan` so a leak detection causes an immediate pipeline halt before any
+AWS credentials are requested.
 
 ---
 
@@ -70,6 +82,7 @@ Runs on pull requests only. Performs `terraform init`, `validate`, and `plan` ag
 
 | Failure | Outcome |
 |---------|---------|
+| Gitleaks finds a secret | Pipeline halts immediately; no AWS jobs run |
 | Unit tests fail | Pipeline stops at `test`; no image built |
 | Trivy finds HIGH/CRITICAL | Pipeline stops at `build-and-scan` before push |
 | ECR tag already exists (immutable) | Push rejected by ECR; pipeline fails |
@@ -90,7 +103,7 @@ The `latest` tag is explicitly denied by the ECR repository policy.
 
 ## Security of the Pipeline Itself
 
-- **Pinned action versions**: all `uses:` lines reference `@v4` (or `@master` for Trivy, which is pinned upstream). In production, pin to SHA digests.
+- **Pinned action versions**: all `uses:` lines are pinned to immutable commit SHAs (e.g. `actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683`), not mutable version tags. This prevents supply chain attacks where a tag is silently moved to malicious code.
 - **Minimal permissions**: the workflow declares `permissions: id-token: write, contents: read`.
 - **No long-lived secrets**: AWS credentials are obtained via OIDC; the CodeArtifact token is masked and scoped to 15 minutes.
 - **SARIF upload**: vulnerability reports go to GitHub's Security tab for traceability, independent of whether the build passed or failed.

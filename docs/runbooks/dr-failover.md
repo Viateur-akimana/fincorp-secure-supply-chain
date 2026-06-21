@@ -45,16 +45,14 @@ aws backup list-recovery-points-by-backup-vault \
 
 ### T+5 — Run Restore Script
 
+Networking values (VPC, subnet group, security group, KMS key) are read automatically
+from SSM Parameter Store — no manual values needed.
+
 ```bash
-# Obtain values from Terraform outputs or Parameter Store
 bash scripts/dr-restore.sh \
-  "$DR_VAULT" \
-  "$DR_REGION" \
-  "fincorp-dr-restored-$(date +%Y%m%d)" \
-  "$DR_VPC_ID" \
-  "$DR_SUBNET_GROUP" \
-  "$DR_SECURITY_GROUP" \
-  "$DR_KMS_KEY_ARN"
+  "fincorp-dr-vault" \
+  "us-west-2" \
+  "fincorp-dr-restored-$(date +%Y%m%d)"
 ```
 
 - [ ] Script exits 0 within 30 minutes.
