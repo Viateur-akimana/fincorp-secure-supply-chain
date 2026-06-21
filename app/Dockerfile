@@ -6,8 +6,14 @@ WORKDIR /app
 RUN npm install -g npm@latest --no-audit --no-fund
 COPY package*.json ./
 # Use the CodeArtifact-proxied registry injected at build time via --build-arg
+# NPM_TOKEN is set as _authToken (not embedded in URL) for npm v9+ compatibility
 ARG NPM_REGISTRY
-RUN if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi \
+ARG NPM_TOKEN
+RUN if [ -n "$NPM_REGISTRY" ]; then \
+      HOST=$(echo "$NPM_REGISTRY" | sed 's|https://||' | sed 's|/.*||'); \
+      npm config set registry "$NPM_REGISTRY"; \
+      npm config set "//${HOST}/:_authToken" "$NPM_TOKEN"; \
+    fi \
  && npm ci --omit=dev
 
 # Stage 2: build/test
@@ -17,7 +23,12 @@ WORKDIR /app
 RUN npm install -g npm@latest --no-audit --no-fund
 COPY package*.json ./
 ARG NPM_REGISTRY
-RUN if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi \
+ARG NPM_TOKEN
+RUN if [ -n "$NPM_REGISTRY" ]; then \
+      HOST=$(echo "$NPM_REGISTRY" | sed 's|https://||' | sed 's|/.*||'); \
+      npm config set registry "$NPM_REGISTRY"; \
+      npm config set "//${HOST}/:_authToken" "$NPM_TOKEN"; \
+    fi \
  && npm ci
 COPY src/ ./src/
 RUN npm test

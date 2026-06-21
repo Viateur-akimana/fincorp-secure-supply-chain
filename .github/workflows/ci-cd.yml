@@ -136,10 +136,8 @@ jobs:
             --format npm \
             --query repositoryEndpoint --output text)
 
-          HOST=$(echo "$ENDPOINT" | sed 's|https://||' | sed 's|/.*||')
-          AUTH_ENDPOINT="https://aws:${TOKEN}@${HOST}/npm/${{ env.CODEARTIFACT_REPO }}/"
-          echo "::add-mask::$AUTH_ENDPOINT"
-          echo "npm_registry=$AUTH_ENDPOINT" >> "$GITHUB_OUTPUT"
+          echo "npm_registry=$ENDPOINT" >> "$GITHUB_OUTPUT"
+          echo "npm_token=$TOKEN" >> "$GITHUB_OUTPUT"
 
       - name: Login to Amazon ECR
         id: ecr-login
@@ -156,6 +154,7 @@ jobs:
         run: |
           docker build \
             --build-arg NPM_REGISTRY="${{ steps.ca-endpoint.outputs.npm_registry }}" \
+            --build-arg NPM_TOKEN="${{ steps.ca-endpoint.outputs.npm_token }}" \
             --build-arg APP_VERSION="${{ steps.meta.outputs.tag }}" \
             --tag "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}" \
             --file app/Dockerfile \
@@ -173,7 +172,7 @@ jobs:
           ignore-unfixed: false
 
       - name: Upload Trivy SARIF to GitHub Security
-        if: always()
+        if: always() && hashFiles('trivy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@dd746615b3b9d728a6a37ca2045b68ca76d4841a  # v3.28.8
         with:
           sarif_file: trivy-results.sarif
