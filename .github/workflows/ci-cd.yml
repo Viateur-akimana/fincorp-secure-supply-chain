@@ -164,7 +164,7 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8  # v0.28.0
         env:
-          TRIVY_IGNOREFILE: .trivyignore
+          TRIVY_IGNOREFILE: /github/workspace/.trivyignore
         with:
           image-ref: "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}"
           format: "sarif"
@@ -173,6 +173,7 @@ jobs:
           exit-code: "1"
           ignore-unfixed: false
           trivyignores: .trivyignore
+          trivy-config: trivy.yaml
 
       - name: Upload Trivy SARIF to GitHub Security
         if: always() && hashFiles('trivy-results.sarif') != ''
