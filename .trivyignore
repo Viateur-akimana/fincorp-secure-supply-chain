@@ -1,0 +1,5 @@
+# CVE-2026-12151 – undici DoS in npm's bundled dependency (not our app code).
+# npm@latest bundles undici 6.26.0; fix requires npm upstream to ship 6.27.0+.
+# Tracked: see vulnerability-response runbook Option C.
+# Expires: 2026-09-19
+CVE-2026-12151
