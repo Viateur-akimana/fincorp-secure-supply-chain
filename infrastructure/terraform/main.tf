@@ -8,20 +8,13 @@ terraform {
     }
   }
 
-  # Local backend – for production migrate to S3:
-  # 1. Run: bash scripts/bootstrap-tf-state.sh
-  # 2. Replace with the s3 backend block below and run: terraform init -migrate-state
-  backend "local" {
-    path = "terraform.tfstate"
+  backend "s3" {
+    bucket       = "fincorp-terraform-state-764988411222"
+    key          = "artifact-mgmt/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
   }
-
-  # backend "s3" {
-  #   bucket         = "fincorp-terraform-state-<ACCOUNT_ID>"
-  #   key            = "artifact-mgmt/terraform.tfstate"
-  #   region         = "us-east-1"
-  #   encrypt        = true
-  #   dynamodb_table = "fincorp-terraform-locks"
-  # }
 }
 
 provider "aws" {
