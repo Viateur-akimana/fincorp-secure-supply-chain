@@ -252,7 +252,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076  # v2.0.1
 
       - name: Generate SBOM with Syft
-        uses: anchore/sbom-action@f325611a7e9571b9cf5bf8d4e51e7c1aef96a28b  # v0.18.0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
         with:
           image: ${{ needs.build-and-scan.outputs.image_uri }}
           artifact-name: sbom-${{ github.run_number }}.spdx.json
