@@ -2,7 +2,7 @@
 
 ## Scope
 
-This plan covers the recovery of FinCorp's primary PostgreSQL RDS database from a full **us-east-1 regional failure** to **us-west-2** within a 30-minute RTO.
+This plan covers the recovery of FinCorp's primary PostgreSQL RDS database from a full **us-east-1 regional failure** to **eu-west-1** within a 30-minute RTO.
 
 ---
 
@@ -13,7 +13,7 @@ This plan covers the recovery of FinCorp's primary PostgreSQL RDS database from 
 | Recovery Time Objective (RTO) | ≤ 30 minutes | AWS Backup restore job + scripted automation |
 | Recovery Point Objective (RPO) | ≤ 24 hours | Daily backup at 02:00 UTC; weekly at 03:00 UTC Sunday |
 
-To reduce RPO to ~5 minutes, RDS Point-in-Time Recovery (PITR) transaction logs can be used instead of snapshot restore, provided the logs were shipped to us-west-2 before the failure. This is a future enhancement.
+To reduce RPO to ~5 minutes, RDS Point-in-Time Recovery (PITR) transaction logs can be used instead of snapshot restore, provided the logs were shipped to eu-west-1 before the failure. This is a future enhancement.
 
 ---
 
@@ -27,12 +27,12 @@ To reduce RPO to ~5 minutes, RDS Point-in-Time Recovery (PITR) transaction logs 
 - **Encryption**: KMS CMK (`alias/backup-primary`)
 - **WORM Lock**: min 7 days, max 365 days
 
-### DR Vault (us-west-2)
+### DR Vault (eu-west-1)
 
 - **Vault**: `fincorp-dr-vault`
 - **Populated by**: `copy_action` in the AWS Backup plan (copies every backup within the same job)
 - **Retention**: 90 days (daily), 365 days (weekly)
-- **Encryption**: separate KMS CMK (`alias/backup-dr`) in us-west-2
+- **Encryption**: separate KMS CMK (`alias/backup-dr`) in eu-west-1
 - **WORM Lock**: min 7 days, max 365 days
 
 ### Timeline of a Nightly Backup
@@ -40,9 +40,9 @@ To reduce RPO to ~5 minutes, RDS Point-in-Time Recovery (PITR) transaction logs 
 ```
 02:00 UTC  Backup job starts in us-east-1
  RDS snapshot created in primary vault
- Cross-region copy job starts to us-west-2
+ Cross-region copy job starts to eu-west-1
 
-~02:20 UTC Snapshot available in fincorp-dr-vault (us-west-2)
+~02:20 UTC Snapshot available in fincorp-dr-vault (eu-west-1)
  Vault lock prevents deletion until day 7
 ```
 
@@ -50,7 +50,7 @@ To reduce RPO to ~5 minutes, RDS Point-in-Time Recovery (PITR) transaction logs 
 
 ## Pre-Requisites for Recovery
 
-Before running the restore, ensure the following exist in **us-west-2**:
+Before running the restore, ensure the following exist in **eu-west-1**:
 
 | Resource | Purpose |
 |----------|---------|
@@ -60,7 +60,7 @@ Before running the restore, ensure the following exist in **us-west-2**:
 | KMS CMK | Encrypt the restored RDS instance |
 | IAM Role `fincorp-aws-backup-role` | Must exist in us-east-1 with cross-region trust |
 
-All of these are provisioned by the Terraform `modules/backup` and `modules/rds` modules applied with `provider = aws.dr`.
+All of these are provisioned automatically by the Terraform `modules/networking` module applied with `provider = aws.dr`. Values are stored in SSM Parameter Store under `/fincorp/dr/*` — no manual inputs required.
 
 ---
 
@@ -81,7 +81,7 @@ aws rds describe-db-instances \
 ```bash
 aws backup list-recovery-points-by-backup-vault \
   --backup-vault-name fincorp-dr-vault \
-  --region us-west-2 \
+  --region eu-west-1 \
   --by-resource-type RDS \
   --query 'RecoveryPoints | sort_by(@, &CreationDate) | [-1]'
 ```
@@ -90,22 +90,22 @@ Note the `RecoveryPointArn` and `CreationDate`. The `CreationDate` is your effec
 
 ### Step 3 – Execute Restore Script (Automated)
 
+Networking values (VPC, subnet group, security group, KMS key) are read automatically
+from SSM Parameter Store — no manual values needed.
+
 ```bash
 bash scripts/dr-restore.sh \
-  fincorp-dr-vault \          # DR vault name
-  us-west-2 \                 # DR region
-  fincorp-dr-restored \       # New DB identifier
-  vpc-XXXXXXXX \              # VPC ID in us-west-2
-  fincorp-dr-subnet-group \   # Subnet group name
-  sg-XXXXXXXX \               # Security group ID
-  arn:aws:kms:us-west-2:ACCOUNT:key/KEY-ID  # KMS key
+  fincorp-dr-vault \      # DR vault name
+  eu-west-1 \             # DR region
+  fincorp-dr-restored     # New DB identifier
 ```
 
 The script will:
-1. Find the most recent recovery point in the DR vault.
-2. Submit an `aws backup start-restore-job`.
-3. Poll every 30 seconds until the job completes or 30 minutes elapse.
-4. Report actual RTO. Exit code 1 if RTO is exceeded.
+1. Read DR networking config from SSM (`/fincorp/dr/*`).
+2. Find the most recent recovery point in the DR vault.
+3. Submit an `aws backup start-restore-job`.
+4. Poll every 30 seconds until the job completes or 30 minutes elapse.
+5. Report actual RTO. Exit code 1 if RTO is exceeded.
 
 ### Step 4 – Update DNS / Connection String
 
@@ -125,10 +125,10 @@ Update the application's Secrets Manager secret or environment variable with the
 ### Step 5 – Validate
 
 ```bash
-bash scripts/dr-validate.sh us-west-2 fincorp-dr-restored
+bash scripts/dr-validate.sh eu-west-1 fincorp-dr-restored
 ```
 
-Expected output: `Validation PASSED for fincorp-dr-restored in us-west-2.`
+Expected output: `Validation PASSED for fincorp-dr-restored in eu-west-1.`
 
 ---
 

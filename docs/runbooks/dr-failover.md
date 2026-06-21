@@ -1,4 +1,4 @@
-# Runbook: DR Failover to us-west-2
+# Runbook: DR Failover to eu-west-1
 
 **Severity**: P1 – Production outage  
 **Target RTO**: 30 minutes from decision to restore complete  
@@ -30,7 +30,7 @@ Is it an AZ failure only?
 ### T+2 — Verify DR Vault Has Recent Recovery Point
 
 ```bash
-export DR_REGION=us-west-2
+export DR_REGION=eu-west-1
 export DR_VAULT=fincorp-dr-vault
 
 aws backup list-recovery-points-by-backup-vault \
@@ -51,7 +51,7 @@ from SSM Parameter Store — no manual values needed.
 ```bash
 bash scripts/dr-restore.sh \
   "fincorp-dr-vault" \
-  "us-west-2" \
+  "eu-west-1" \
   "fincorp-dr-restored-$(date +%Y%m%d)"
 ```
 
@@ -89,7 +89,7 @@ aws secretsmanager update-secret \
 ### T+30 — Confirm Recovery
 
 - [ ] Application health check returns `200 OK`.
-- [ ] Database metrics visible in CloudWatch (us-west-2).
+- [ ] Database metrics visible in CloudWatch (eu-west-1).
 - [ ] Close RTO stopwatch. Record actual RTO in incident ticket.
 
 ---
