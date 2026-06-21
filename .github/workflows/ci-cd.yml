@@ -163,6 +163,8 @@ jobs:
       # Trivy vulnerability scan (pre-push, pinned to v0.62.1)
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8  # v0.28.0
+        env:
+          TRIVY_IGNOREFILE: .trivyignore
         with:
           image-ref: "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}"
           format: "sarif"
