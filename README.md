@@ -126,8 +126,6 @@ Go to **Actions DR Simulation & Recovery Test Run workflow**, choose `restore-fr
 - **Vault Lock**: AWS Backup WORM lock prevents backup deletion (satisfies SEC 17a-4).
 - **SSL Enforced**: `rds.force_ssl = 1` parameter blocks unencrypted DB connections.
 - **Auto-provisioned Networking**: VPC, subnets, SGs, and KMS keys created by Terraform in both regions — no manual secrets needed.
-- **Vault Lock**: AWS Backup WORM lock prevents backup deletion.
-- **SSL Enforced**: `rds.force_ssl = 1` parameter blocks unencrypted connections.
 - **Audit Logging**: RDS CloudWatch log exports (postgresql, upgrade) and ECR API CloudTrail.
 
 ---

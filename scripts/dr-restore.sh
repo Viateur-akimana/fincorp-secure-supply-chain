@@ -12,6 +12,7 @@ set -euo pipefail
 VAULT_NAME="${1:-fincorp-dr-vault}"
 DR_REGION="${2:-us-west-2}"
 NEW_DB_ID="${3:-fincorp-dr-restored}"
+PRIMARY_REGION="${4:-us-east-1}"  # SSM parameters live in the primary region
 
 START_TIME=$(date +%s)
 echo "============================================================"
@@ -25,14 +26,17 @@ echo "============================================================"
 echo "[1/6] Reading DR networking config from SSM Parameter Store ..."
 SUBNET_GROUP=$(aws ssm get-parameter \
   --name "/fincorp/dr/db_subnet_group" \
+  --region "$PRIMARY_REGION" \
   --query Parameter.Value --output text)
 
 SECURITY_GROUP=$(aws ssm get-parameter \
   --name "/fincorp/dr/security_group_id" \
+  --region "$PRIMARY_REGION" \
   --query Parameter.Value --output text)
 
 KMS_KEY_ARN=$(aws ssm get-parameter \
   --name "/fincorp/dr/kms_key_arn" \
+  --region "$PRIMARY_REGION" \
   --query Parameter.Value --output text)
 
 echo "  Subnet group   : ${SUBNET_GROUP}"

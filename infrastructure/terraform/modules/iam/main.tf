@@ -96,3 +96,73 @@ resource "aws_iam_role_policy" "codeartifact" {
     ]
   })
 }
+
+# SSM Parameter Store — read /fincorp/* (DR networking, DB identifier)
+resource "aws_iam_role_policy" "ssm_read" {
+  role = aws_iam_role.cicd.name
+  name = "ssm-read-fincorp"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ssm:GetParameter", "ssm:GetParameters"]
+      Resource = "arn:aws:ssm:*:${var.account_id}:parameter/fincorp/*"
+    }]
+  })
+}
+
+# RDS — DR drill (simulate failure) and validate restore
+resource "aws_iam_role_policy" "rds_dr" {
+  role = aws_iam_role.cicd.name
+  name = "rds-dr-operations"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "rds:DescribeDBInstances",
+        "rds:ModifyDBInstance",
+        "rds:DeleteDBInstance",
+        "rds:CreateDBSnapshot",
+        "rds:DescribeDBSnapshots"
+      ]
+      Resource = "*"
+    }]
+  })
+}
+
+# AWS Backup — list recovery points and start restore jobs for DR
+resource "aws_iam_role_policy" "backup_dr" {
+  role = aws_iam_role.cicd.name
+  name = "backup-dr-restore"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "backup:ListRecoveryPointsByBackupVault",
+          "backup:DescribeRecoveryPoint",
+          "backup:StartRestoreJob",
+          "backup:DescribeRestoreJob"
+        ]
+        Resource = "*"
+      },
+      {
+        # dr-restore.sh looks up the backup role ARN dynamically via iam:GetRole
+        Effect   = "Allow"
+        Action   = ["iam:GetRole"]
+        Resource = "arn:aws:iam::${var.account_id}:role/fincorp-aws-backup-role"
+      },
+      {
+        # Pass the backup role to the restore job
+        Effect   = "Allow"
+        Action   = ["iam:PassRole"]
+        Resource = "arn:aws:iam::${var.account_id}:role/fincorp-aws-backup-role"
+      }
+    ]
+  })
+}
