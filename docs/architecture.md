@@ -28,7 +28,7 @@
  Plan: daily @ 02:00 UTC + weekly Sunday
  Vault: fincorp-primary-vault (WORM locked)
  Cross-Region Copy
-         DR REGION: eu-west-1
+         DR REGION: us-west-2
  AWS Backup
  Vault: fincorp-dr-vault (WORM locked)
  Retention: 90 days daily, 365 days weekly

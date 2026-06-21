@@ -2,7 +2,7 @@
 
 ## Scope
 
-This plan covers the recovery of FinCorp's primary PostgreSQL RDS database from a full **us-east-1 regional failure** to **eu-west-1** within a 30-minute RTO.
+This plan covers the recovery of FinCorp's primary PostgreSQL RDS database from a full **us-east-1 regional failure** to **us-west-2** within a 30-minute RTO.
 
 ---
 
@@ -13,7 +13,7 @@ This plan covers the recovery of FinCorp's primary PostgreSQL RDS database from 
 | Recovery Time Objective (RTO) | ≤ 30 minutes | AWS Backup restore job + scripted automation |
 | Recovery Point Objective (RPO) | ≤ 24 hours | Daily backup at 02:00 UTC; weekly at 03:00 UTC Sunday |
 
-To reduce RPO to ~5 minutes, RDS Point-in-Time Recovery (PITR) transaction logs can be used instead of snapshot restore, provided the logs were shipped to eu-west-1 before the failure. This is a future enhancement.
+To reduce RPO to ~5 minutes, RDS Point-in-Time Recovery (PITR) transaction logs can be used instead of snapshot restore, provided the logs were shipped to us-west-2 before the failure. This is a future enhancement.
 
 ---
 
@@ -27,12 +27,12 @@ To reduce RPO to ~5 minutes, RDS Point-in-Time Recovery (PITR) transaction logs 
 - **Encryption**: KMS CMK (`alias/backup-primary`)
 - **WORM Lock**: min 7 days, max 365 days
 
-### DR Vault (eu-west-1)
+### DR Vault (us-west-2)
 
 - **Vault**: `fincorp-dr-vault`
 - **Populated by**: `copy_action` in the AWS Backup plan (copies every backup within the same job)
 - **Retention**: 90 days (daily), 365 days (weekly)
-- **Encryption**: separate KMS CMK (`alias/backup-dr`) in eu-west-1
+- **Encryption**: separate KMS CMK (`alias/backup-dr`) in us-west-2
 - **WORM Lock**: min 7 days, max 365 days
 
 ### Timeline of a Nightly Backup
@@ -40,9 +40,9 @@ To reduce RPO to ~5 minutes, RDS Point-in-Time Recovery (PITR) transaction logs 
 ```
 02:00 UTC  Backup job starts in us-east-1
  RDS snapshot created in primary vault
- Cross-region copy job starts to eu-west-1
+ Cross-region copy job starts to us-west-2
 
-~02:20 UTC Snapshot available in fincorp-dr-vault (eu-west-1)
+~02:20 UTC Snapshot available in fincorp-dr-vault (us-west-2)
  Vault lock prevents deletion until day 7
 ```
 
@@ -50,7 +50,7 @@ To reduce RPO to ~5 minutes, RDS Point-in-Time Recovery (PITR) transaction logs 
 
 ## Pre-Requisites for Recovery
 
-Before running the restore, ensure the following exist in **eu-west-1**:
+Before running the restore, ensure the following exist in **us-west-2**:
 
 | Resource | Purpose |
 |----------|---------|
@@ -81,7 +81,7 @@ aws rds describe-db-instances \
 ```bash
 aws backup list-recovery-points-by-backup-vault \
   --backup-vault-name fincorp-dr-vault \
-  --region eu-west-1 \
+  --region us-west-2 \
   --by-resource-type RDS \
   --query 'RecoveryPoints | sort_by(@, &CreationDate) | [-1]'
 ```
@@ -93,12 +93,12 @@ Note the `RecoveryPointArn` and `CreationDate`. The `CreationDate` is your effec
 ```bash
 bash scripts/dr-restore.sh \
   fincorp-dr-vault \          # DR vault name
-  eu-west-1 \                 # DR region
+  us-west-2 \                 # DR region
   fincorp-dr-restored \       # New DB identifier
-  vpc-XXXXXXXX \              # VPC ID in eu-west-1
+  vpc-XXXXXXXX \              # VPC ID in us-west-2
   fincorp-dr-subnet-group \   # Subnet group name
   sg-XXXXXXXX \               # Security group ID
-  arn:aws:kms:eu-west-1:ACCOUNT:key/KEY-ID  # KMS key
+  arn:aws:kms:us-west-2:ACCOUNT:key/KEY-ID  # KMS key
 ```
 
 The script will:
@@ -115,7 +115,7 @@ After restore, update the application's database connection string to point to t
 # Get the new endpoint
 aws rds describe-db-instances \
   --db-instance-identifier fincorp-dr-restored \
-  --region eu-west-1 \
+  --region us-west-2 \
   --query 'DBInstances[0].Endpoint.Address' \
   --output text
 ```
@@ -125,10 +125,10 @@ Update the application's Secrets Manager secret or environment variable with the
 ### Step 5 – Validate
 
 ```bash
-bash scripts/dr-validate.sh eu-west-1 fincorp-dr-restored
+bash scripts/dr-validate.sh us-west-2 fincorp-dr-restored
 ```
 
-Expected output: `Validation PASSED for fincorp-dr-restored in eu-west-1.`
+Expected output: `Validation PASSED for fincorp-dr-restored in us-west-2.`
 
 ---
 

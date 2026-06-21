@@ -30,7 +30,7 @@ output "backup_vault_arn" {
 }
 
 output "dr_vault_arn" {
-  description = "DR backup vault ARN in eu-west-1"
+  description = "DR backup vault ARN in us-west-2"
   value       = module.backup.dr_vault_arn
 }
 

@@ -8,7 +8,7 @@ This repository implements FinCorp's secure, auditable software supply chain and
 | Secure package registry | AWS CodeArtifact proxying public npm and PyPI |
 | Build fails on HIGH/CRITICAL CVEs | Trivy `exit-code: 1` + ECR scan gate |
 | RDS in us-east-1 | Terraform `modules/rds`, Multi-AZ, encrypted |
-| Daily cross-region backups | AWS Backup plan with `cron(0 2 * * ? *)` + copy to eu-west-1 |
+| Daily cross-region backups | AWS Backup plan with `cron(0 2 * * ? *)` + copy to us-west-2 |
 | DR failover within 30 minutes | `scripts/dr-restore.sh` with RTO tracking |
 
 ---
@@ -38,7 +38,7 @@ This repository implements FinCorp's secure, auditable software supply chain and
  setup-codeartifact.sh # Configure npm/pip to use CodeArtifact
  check-ecr-vulnerabilities.sh # Gate: fail on HIGH/CRITICAL
  dr-simulate-failure.sh # Delete primary DB (DR drill)
- dr-restore.sh # Restore DB in eu-west-1 within 30 min
+ dr-restore.sh # Restore DB in us-west-2 within 30 min
  dr-validate.sh # Validate restored DB health
  docs/
  architecture.md # System architecture & design decisions
@@ -89,10 +89,10 @@ terraform apply tfplan
 | `PRIMARY_VPC_ID` | VPC ID in us-east-1 |
 | `PRIMARY_SUBNET_IDS` | Comma-separated private subnet IDs |
 | `PRIMARY_DB_IDENTIFIER` | RDS instance identifier |
-| `DR_VPC_ID` | VPC ID in eu-west-1 |
-| `DR_SUBNET_GROUP` | DB subnet group name in eu-west-1 |
-| `DR_SECURITY_GROUP` | Security group ID in eu-west-1 |
-| `DR_KMS_KEY_ARN` | KMS key ARN in eu-west-1 for restored DB |
+| `DR_VPC_ID` | VPC ID in us-west-2 |
+| `DR_SUBNET_GROUP` | DB subnet group name in us-west-2 |
+| `DR_SECURITY_GROUP` | Security group ID in us-west-2 |
+| `DR_KMS_KEY_ARN` | KMS key ARN in us-west-2 for restored DB |
 
 ### 3 – Trigger a Pipeline Run
 
@@ -155,7 +155,7 @@ All infrastructure is tagged with `Project`, `Environment`, and `ManagedBy` for 
 
 ![AWS Backup primary vault](screenshoots/image%20copy%205.png)
 
-### AWS Backup – DR Vault Recovery Point (eu-west-1)
+### AWS Backup – DR Vault Recovery Point (us-west-2)
 
 ![AWS Backup DR vault](screenshoots/image%20copy%206.png)
 
@@ -163,7 +163,7 @@ All infrastructure is tagged with `Project`, `Environment`, and `ManagedBy` for 
 
 ![Primary RDS deleted](screenshoots/image%20copy%207.png)
 
-### DR Restore – fincorp-dr-restored Available in eu-west-1
+### DR Restore – fincorp-dr-restored Available in us-west-2
 
 ![DR restored instance](screenshoots/image%20copy%208.png)
 

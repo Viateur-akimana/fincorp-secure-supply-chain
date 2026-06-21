@@ -7,7 +7,7 @@ variable "primary_region" {
 variable "dr_region" {
   description = "AWS disaster-recovery region"
   type        = string
-  default     = "eu-west-1"
+  default     = "us-west-2"
 }
 
 variable "environment" {

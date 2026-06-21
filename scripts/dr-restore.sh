@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # dr-restore.sh
-# Restores the RDS database in eu-west-1 from the latest AWS Backup recovery point.
+# Restores the RDS database in us-west-2 from the latest AWS Backup recovery point.
 # Target RTO: 30 minutes.
 #
 # Usage:
@@ -9,7 +9,7 @@
 set -euo pipefail
 
 VAULT_NAME="$1"
-DR_REGION="${2:-eu-west-1}"
+DR_REGION="${2:-us-west-2}"
 NEW_DB_ID="$3"
 VPC_ID="$4"
 SUBNET_GROUP="$5"

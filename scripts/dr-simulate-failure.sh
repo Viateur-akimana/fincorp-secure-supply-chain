@@ -70,4 +70,4 @@ aws rds wait db-instance-deleted \
 
 echo ""
 echo "Primary DB ${DB_IDENTIFIER} DELETED at $(date -u +%Y-%m-%dT%H:%M:%SZ)."
-echo "RTO clock starts now. Run dr-restore.sh to recover in ${REGION/us-east-1/eu-west-1}."
+echo "RTO clock starts now. Run dr-restore.sh to recover in ${REGION/us-east-1/us-west-2}."

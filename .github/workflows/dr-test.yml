@@ -27,7 +27,7 @@ permissions:
 
 env:
   PRIMARY_REGION: us-east-1
-  DR_REGION: eu-west-1
+  DR_REGION: us-west-2
   DR_INSTANCE_IDENTIFIER: fincorp-dr-restored
   BACKUP_VAULT_NAME: fincorp-primary-vault
   DR_VAULT_NAME: fincorp-dr-vault

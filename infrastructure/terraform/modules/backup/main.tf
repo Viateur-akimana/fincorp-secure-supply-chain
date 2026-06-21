@@ -22,7 +22,7 @@ resource "aws_backup_vault" "primary" {
   kms_key_arn = aws_kms_key.backup_primary.arn
 }
 
-# DR Backup Vault (eu-west-1)
+# DR Backup Vault (us-west-2)
 resource "aws_kms_key" "backup_dr" {
   provider                = aws.dr
   description             = "KMS key for DR AWS Backup vault"
