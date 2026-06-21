@@ -2,8 +2,14 @@
 FROM node:22-alpine@sha256:ab07539e0988b63558ff621f5fbe1077054c39d9809112974fb79993949d41cd AS deps
 
 WORKDIR /app
-# Upgrade npm to pull latest security patches before installing app deps
-RUN npm install -g npm@latest --no-audit --no-fund
+# Upgrade npm (fixes picomatch CVE-2026-33671) then patch npm's bundled undici
+# to 6.27.0 (fixes CVE-2026-12151 — undici DoS, not yet released in npm@latest)
+RUN npm install -g npm@latest --no-audit --no-fund \
+ && npm pack undici@6.27.0 --pack-destination /tmp --quiet \
+ && tar xzf /tmp/undici-6.27.0.tgz \
+      -C /usr/local/lib/node_modules/npm/node_modules/undici \
+      --strip-components=1 \
+ && rm /tmp/undici-6.27.0.tgz
 COPY package*.json ./
 # Use the CodeArtifact-proxied registry injected at build time via --build-arg
 # NPM_TOKEN is set as _authToken (not embedded in URL) for npm v9+ compatibility
@@ -20,7 +26,12 @@ RUN if [ -n "$NPM_REGISTRY" ]; then \
 FROM node:22-alpine@sha256:ab07539e0988b63558ff621f5fbe1077054c39d9809112974fb79993949d41cd AS builder
 
 WORKDIR /app
-RUN npm install -g npm@latest --no-audit --no-fund
+RUN npm install -g npm@latest --no-audit --no-fund \
+ && npm pack undici@6.27.0 --pack-destination /tmp --quiet \
+ && tar xzf /tmp/undici-6.27.0.tgz \
+      -C /usr/local/lib/node_modules/npm/node_modules/undici \
+      --strip-components=1 \
+ && rm /tmp/undici-6.27.0.tgz
 COPY package*.json ./
 ARG NPM_REGISTRY
 ARG NPM_TOKEN
@@ -39,8 +50,12 @@ FROM node:22-alpine@sha256:ab07539e0988b63558ff621f5fbe1077054c39d9809112974fb79
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 WORKDIR /app
-# Upgrade npm in the final image so the image scanner sees the patched version
-RUN npm install -g npm@latest --no-audit --no-fund
+RUN npm install -g npm@latest --no-audit --no-fund \
+ && npm pack undici@6.27.0 --pack-destination /tmp --quiet \
+ && tar xzf /tmp/undici-6.27.0.tgz \
+      -C /usr/local/lib/node_modules/npm/node_modules/undici \
+      --strip-components=1 \
+ && rm /tmp/undici-6.27.0.tgz
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/src ./src
