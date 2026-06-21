@@ -6,6 +6,7 @@
 tfplan
 *.tfstate
 *.tfstate.backup
+terraform.tfstate.*
 override.tf
 override.tf.json
 
