@@ -67,6 +67,8 @@ resource "aws_iam_role_policy" "ecr" {
 }
 
 # CodeArtifact permissions
+# GetAuthorizationToken targets the domain; GetRepositoryEndpoint and
+# ReadFromRepository target repository resources — split into two statements.
 resource "aws_iam_role_policy" "codeartifact" {
   role = aws_iam_role.cicd.name
   name = "codeartifact-read"
@@ -75,13 +77,17 @@ resource "aws_iam_role_policy" "codeartifact" {
     Version = "2012-10-17"
     Statement = [
       {
+        Effect   = "Allow"
+        Action   = ["codeartifact:GetAuthorizationToken"]
+        Resource = var.ca_domain_arn
+      },
+      {
         Effect = "Allow"
         Action = [
-          "codeartifact:GetAuthorizationToken",
           "codeartifact:GetRepositoryEndpoint",
           "codeartifact:ReadFromRepository"
         ]
-        Resource = var.ca_domain_arn
+        Resource = "arn:aws:codeartifact:${var.primary_region}:${var.account_id}:repository/*/*"
       },
       {
         Effect   = "Allow"
