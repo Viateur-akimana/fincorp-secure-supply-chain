@@ -80,30 +80,31 @@ terraform apply tfplan
 
 ### 2 – Configure GitHub Secrets
 
+Only 3 secrets are required. Networking, passwords, and DB identifiers are provisioned
+automatically by Terraform and stored in SSM Parameter Store.
+
 | Secret | Description |
 |--------|-------------|
 | `AWS_CICD_ROLE_ARN` | ARN of the OIDC role (`terraform output cicd_role_arn`) |
 | `AWS_ACCOUNT_ID` | 12-digit AWS account ID |
-| `DB_USERNAME` | RDS master username |
-| `DB_PASSWORD` | RDS master password |
-| `PRIMARY_VPC_ID` | VPC ID in us-east-1 |
-| `PRIMARY_SUBNET_IDS` | Comma-separated private subnet IDs |
-| `PRIMARY_DB_IDENTIFIER` | RDS instance identifier |
-| `DR_VPC_ID` | VPC ID in us-west-2 |
-| `DR_SUBNET_GROUP` | DB subnet group name in us-west-2 |
-| `DR_SECURITY_GROUP` | Security group ID in us-west-2 |
-| `DR_KMS_KEY_ARN` | KMS key ARN in us-west-2 for restored DB |
+| `DB_USERNAME` | RDS master username (password is managed by AWS Secrets Manager) |
+
+> **Removed secrets** — no longer needed after Terraform provisions infrastructure:
+> `DB_PASSWORD`, `PRIMARY_VPC_ID`, `PRIMARY_SUBNET_IDS`, `PRIMARY_DB_IDENTIFIER`,
+> `DR_VPC_ID`, `DR_SUBNET_GROUP`, `DR_SECURITY_GROUP`, `DR_KMS_KEY_ARN`
 
 ### 3 – Trigger a Pipeline Run
 
 Push to `main` or open a pull request. The pipeline will:
-1. Install deps from CodeArtifact
-2. Run unit tests
-3. Build the Docker image
-4. Run Trivy scan – **fails** if HIGH/CRITICAL CVEs found
-5. Push the immutable-tagged image to ECR
-6. Wait for ECR's own scan and gate on results
-7. Generate an SBOM
+1. Scan for committed secrets (Gitleaks)
+2. Install deps from CodeArtifact
+3. Run unit tests
+4. Build the Docker image (base image digest-pinned)
+5. Run Trivy scan – **fails** if HIGH/CRITICAL CVEs found
+6. Push the immutable-tagged image to ECR
+7. Wait for ECR's own scan and gate on results
+8. Sign the image with Cosign (keyless OIDC)
+9. Generate an SBOM
 
 ### 4 – Run a DR Drill
 
@@ -114,9 +115,17 @@ Go to **Actions DR Simulation & Recovery Test Run workflow**, choose `restore-fr
 ## Security Controls Summary
 
 - **Tag Immutability**: ECR `imageTagMutability = IMMUTABLE` prevents overwriting a released tag.
-- **Scan on Push**: Both Trivy (pre-push) and ECR enhanced scanning (post-push) gate on HIGH/CRITICAL.
-- **Least-Privilege OIDC**: No long-lived AWS keys; GitHub Actions assumes a scoped role.
-- **KMS Encryption**: RDS, backups, CodeArtifact domain all use customer-managed KMS keys with rotation.
+- **Dual-layer Scan**: Trivy (pre-push, exit-code 1) + ECR Enhanced Scanning (post-push) both gate on HIGH/CRITICAL.
+- **Secret Scanning**: Gitleaks scans every push and PR before any AWS job runs.
+- **Image Signing**: Cosign keyless signing ties every pushed image to its GitHub Actions run via OIDC.
+- **Digest-pinned Base Image**: All Dockerfile `FROM` stages use `sha256` digest — no mutable tags.
+- **Least-Privilege OIDC**: No long-lived AWS keys; all pipeline jobs assume a scoped role via OIDC.
+- **KMS Encryption**: RDS, backups, CodeArtifact, and CloudTrail all use customer-managed KMS keys with rotation.
+- **Secrets Manager**: RDS master password is generated and auto-rotated by AWS — never stored in GitHub Secrets or Terraform state.
+- **CloudTrail**: Multi-region audit trail captures all API calls to an encrypted, version-enabled S3 bucket.
+- **Vault Lock**: AWS Backup WORM lock prevents backup deletion (satisfies SEC 17a-4).
+- **SSL Enforced**: `rds.force_ssl = 1` parameter blocks unencrypted DB connections.
+- **Auto-provisioned Networking**: VPC, subnets, SGs, and KMS keys created by Terraform in both regions — no manual secrets needed.
 - **Vault Lock**: AWS Backup WORM lock prevents backup deletion.
 - **SSL Enforced**: `rds.force_ssl = 1` parameter blocks unencrypted connections.
 - **Audit Logging**: RDS CloudWatch log exports (postgresql, upgrade) and ECR API CloudTrail.
