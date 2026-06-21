@@ -34,18 +34,18 @@ while true; do
   elapsed=$((elapsed + INTERVAL))
 done
 
-# Pull severity counts
+# Pull severity counts — may be null when there are no findings
 FINDINGS=$(aws ecr describe-image-scan-findings \
   --repository-name "$REPO_NAME" \
   --image-id imageTag="$IMAGE_TAG" \
   --query 'imageScanFindings.findingSeverityCounts' \
-  --output json)
+  --output json 2>/dev/null || echo "null")
 
 echo "ECR scan severity summary:"
-echo "$FINDINGS" | python3 -m json.tool
+echo "$FINDINGS" | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip() or 'null') or {}; print(json.dumps(d,indent=2))" 2>/dev/null || echo "{}"
 
-CRITICAL=$(echo "$FINDINGS" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('CRITICAL', 0))")
-HIGH=$(echo "$FINDINGS"     | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('HIGH', 0))")
+CRITICAL=$(echo "$FINDINGS" | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip() or 'null') or {}; print(d.get('CRITICAL', 0))")
+HIGH=$(echo "$FINDINGS"     | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip() or 'null') or {}; print(d.get('HIGH', 0))")
 
 echo "CRITICAL: ${CRITICAL}  HIGH: ${HIGH}"
 
